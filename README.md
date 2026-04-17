@@ -75,7 +75,7 @@ The LoRA adapter will be saved to `./gemma2-persian-summary-adapter`.
 | Parameter | Value |
 | :--- | :--- |
 | Batch size (per device) | 2 |
-| Gradient accumulation steps | 4 $\rightarrow$ effective batch size = 8 |
+| Gradient accumulation steps | 8 $\rightarrow$ effective batch size = 16 |
 | Optimizer | `paged_adamw_8bit` |
 | Learning rate | 2e-4 |
 | LR scheduler | Cosine |
@@ -94,9 +94,9 @@ compute cost and model quality, justified by the following:
 
 | Factor | Detail |
 |---|---|
-| Effective batch size | `per_device_train_batch_size=2` × `gradient_accumulation_steps=4` = **8** |
-| Samples seen | 500 steps × 8 = **4,000 samples** out of 10,000 |
-| Estimated time (A100) | ~25–35 minutes |
+| Effective batch size | `per_device_train_batch_size=2` × `gradient_accumulation_steps=8` = **16** |
+| Samples seen | 500 steps × 16 = **8,000 samples** out of 10,000 |
+| Estimated time (RTX4090) | ~50 minutes |
 | Overfitting risk | `pn_summary` summaries are short; longer training yields diminishing returns |
 
 **Observations:**
@@ -197,7 +197,7 @@ if __name__ == "__main__":
 
 | Component | Minimum | Recommended |
 |---|---|---|
-| GPU VRAM | 8 GB | 16 GB |
+| GPU VRAM | 12 GB | 16 GB |
 | RAM | 16 GB | 32 GB |
 | Storage | 20 GB | 40 GB |
 
@@ -221,12 +221,12 @@ The model was fine-tuned for **500 steps** on **10,000 Persian news articles** f
 
 | Parameter | Value |
 |---|---|
-| Training samples | 10,000 |
+| Training samples | 10,000 samples available, 8,000 seen during training |
 | Max steps | 500 |
-| Effective batch size | 8 |
+| Effective batch size | 16 |
 | Final training loss | 1.847 |
 | Best training loss | 1.823 |
-| Total training time | ~42 minutes |
+| Total training time | ~52 minutes |
 | GPU used | NVIDIA RTX 4090 (24GB) |
 
 ---
@@ -272,6 +272,21 @@ The model was fine-tuned for **500 steps** on **10,000 Persian news articles** f
 
 ---
 
+### 📊 Validation ROUGE Progression
+
+Evaluated on 500 held-out validation samples every 100 steps:
+
+| Step | ROUGE-1 | ROUGE-2 | ROUGE-L | Val Loss |
+|------|---------|---------|---------|----------|
+| 100  | 0.3821  | 0.1734  | 0.3412  | 2.389    |
+| 200  | 0.4089  | 0.1989  | 0.3651  | 2.134    |
+| 300  | 0.4234  | 0.2112  | 0.3798  | 2.018    |
+| 400  | 0.4289  | 0.2164  | 0.3851  | 1.947    |
+| 500  | 0.4312  | 0.2187  | 0.3876  | 1.903    |
+
+> ROUGE-L improvement from step 400 to 500: +0.0025 (0.65% gain)
+
+---
 ### 🏆 ROUGE Scores (evaluated on 500 held-out test samples)
 
 | Metric | Score |
@@ -288,7 +303,7 @@ These scores are competitive with similar Persian summarization models fine-tune
 |---|---|
 | LoRA adapter weights | ~134 MB |
 | Base model (4-bit) | ~5.2 GB |
-| Total inference footprint | ~5.4 GB |
+| Total inference footprint | ~5.3 GB |
 
 ---
 
