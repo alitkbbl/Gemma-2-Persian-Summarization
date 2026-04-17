@@ -16,7 +16,7 @@ OUTPUT_DIR = "./gemma2-persian-summary-adapter"
 
 # --- 2. Load Dataset ---
 print(f"Loading dataset {DATASET_ID}...")
-dataset = load_dataset(DATASET_ID, split="train[:5000]")
+dataset = load_dataset(DATASET_ID, split="train[:10000]")
 
 # FIX: verify column names exist before training
 print(f"Dataset columns: {dataset.column_names}")

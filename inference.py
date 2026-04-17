@@ -9,6 +9,9 @@ def load_model_and_tokenizer(base_model_id, adapter_path):
     print(f"Loading tokenizer from {base_model_id}...")
     tokenizer = AutoTokenizer.from_pretrained(base_model_id)
 
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        
     # Configure 4-bit quantization for memory efficiency
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
