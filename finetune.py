@@ -16,29 +16,47 @@ OUTPUT_DIR = "./gemma2-persian-summary-adapter"
 
 # --- 2. Load Dataset ---
 print(f"Loading dataset {DATASET_ID}...")
-# Loading only a subset (e.g., train split) for demonstration
-dataset = load_dataset(DATASET_ID, split="train[:5000]") 
+dataset = load_dataset(DATASET_ID, split="train[:5000]")
 
-# --- 3. Format Prompt ---
+# FIX: verify column names exist before training
+print(f"Dataset columns: {dataset.column_names}")
+assert "article" in dataset.column_names, "Column 'article' not found in dataset!"
+assert "summary" in dataset.column_names, "Column 'summary' not found in dataset!"
+
+# --- 3. Load Tokenizer ---
+print("Loading tokenizer...")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+tokenizer.padding_side = "right"  # Recommended for Gemma
+
+# --- 4. Format Prompt ---
+# FIX: use apply_chat_template instead of hardcoded string
+# to stay consistent with inference.py and avoid format mismatch
 def formatting_prompts_func(example):
     """
-    Formats the input dataset into the Gemma-2 instruction format.
+    Formats dataset into Gemma-2 instruction format using the tokenizer's
+    chat template — consistent with inference.py.
     """
     output_texts = []
-    for i in range(len(example['article'])):
-        text = example['article'][i]
-        summary = example['summary'][i]
-        
-        # Using the standard instruction format
-        prompt = f"<bos><start_of_turn>user\nمتن زیر را به صورت دقیق و کوتاه خلاصه کن:\n\n{text}<end_of_turn>\n<start_of_turn>model\n{summary}<end_of_turn><eos>"
+    for i in range(len(example["article"])):
+        text = example["article"][i]
+        summary = example["summary"][i]
+
+        messages = [
+            {"role": "user", "content": f"متن زیر را به صورت دقیق و کوتاه خلاصه کن:\n\n{text}"},
+            {"role": "assistant", "content": summary}
+        ]
+
+        # apply_chat_template handles BOS/EOS and turn tokens correctly
+        prompt = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=False
+        )
         output_texts.append(prompt)
     return output_texts
 
-# --- 4. Load Tokenizer and Model in 4-bit ---
-print("Loading tokenizer and model...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-tokenizer.padding_side = 'right' # Recommended for Gemma
-
+# --- 5. Load Model in 4-bit ---
+print("Loading model...")
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_quant_type="nf4",
@@ -53,12 +71,12 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model = prepare_model_for_kbit_training(model)
 
-# --- 5. LoRA Configuration ---
+# --- 6. LoRA Configuration ---
 print("Setting up LoRA...")
 lora_config = LoraConfig(
-    r=16, # Rank
+    r=16,
     lora_alpha=32,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], # Target all linear layers for better fine-tuning
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     lora_dropout=0.05,
     bias="none",
     task_type="CAUSAL_LM"
@@ -67,38 +85,41 @@ lora_config = LoraConfig(
 model = get_peft_model(model, lora_config)
 model.print_trainable_parameters()
 
-# --- 6. Training Arguments ---
+# --- 7. Training Arguments ---
+# FIX: detect bf16 support at runtime instead of hardcoding True
+bf16_supported = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+
 training_args = TrainingArguments(
     output_dir=OUTPUT_DIR,
-    per_device_train_batch_size=2, # Suitable for 24GB VRAM
-    gradient_accumulation_steps=4, # Effective batch size = 8
+    per_device_train_batch_size=2,
+    gradient_accumulation_steps=4,  # effective batch size = 8
     optim="paged_adamw_8bit",
     save_steps=100,
     logging_steps=10,
     learning_rate=2e-4,
-    fp16=False,
-    bf16=True, # bfloat16 is highly recommended for newer GPUs like RTX 4090
+    fp16=not bf16_supported,   # fallback to fp16 if bf16 not available
+    bf16=bf16_supported,
     max_grad_norm=0.3,
-    max_steps=500, # Set a limit for quick demonstration
+    max_steps=500,
     warmup_ratio=0.03,
     lr_scheduler_type="cosine",
 )
 
-# --- 7. Initialize Trainer ---
+# --- 8. Initialize Trainer ---
 trainer = SFTTrainer(
     model=model,
     train_dataset=dataset,
     formatting_func=formatting_prompts_func,
-    max_seq_length=1024, # Maximum sequence length
+    max_seq_length=1024,
     tokenizer=tokenizer,
     args=training_args,
 )
 
-# --- 8. Start Training ---
+# --- 9. Start Training ---
 print("Starting training...")
 trainer.train()
 
-# --- 9. Save Model ---
+# --- 10. Save Model ---
 print(f"Saving final adapter to {OUTPUT_DIR}...")
 trainer.model.save_pretrained(OUTPUT_DIR)
 tokenizer.save_pretrained(OUTPUT_DIR)
